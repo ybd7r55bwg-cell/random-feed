@@ -1,4 +1,4 @@
-var CACHE="random-feed-v1";
+var CACHE="random-feed-v2";
 var ASSETS=["./","./index.html","./manifest.json",
             "./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png"];
 
@@ -20,14 +20,34 @@ self.addEventListener("activate",function(e){
 
 self.addEventListener("fetch",function(e){
   if(e.request.method!=="GET") return;
-  e.respondWith(
-    caches.match(e.request).then(function(hit){
-      if(hit) return hit;
-      return fetch(e.request).then(function(res){
+  var req=e.request;
+  var isDoc = req.mode==="navigate" || req.destination==="document";
+
+  if(isDoc){
+    e.respondWith(
+      fetch(req).then(function(res){
         var copy=res.clone();
-        caches.open(CACHE).then(function(c){ c.put(e.request,copy); });
+        caches.open(CACHE).then(function(c){ c.put(req,copy); });
         return res;
-      }).catch(function(){ return caches.match("./index.html"); });
+      }).catch(function(){
+        return caches.match(req).then(function(hit){
+          return hit || caches.match("./index.html");
+        });
+      })
+    );
+    return;
+  }
+
+  e.respondWith(
+    caches.match(req).then(function(hit){
+      if(hit) return hit;
+      return fetch(req).then(function(res){
+        if(res && res.status===200){
+          var copy=res.clone();
+          caches.open(CACHE).then(function(c){ c.put(req,copy); });
+        }
+        return res;
+      });
     })
   );
 });
