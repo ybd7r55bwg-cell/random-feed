@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>随机流</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="随机流" />
+<meta name="theme-color" content="#0a0a0b" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="icon" href="icons/icon-192.png" />
+<style>
+  :root{
+    --bg:#0a0a0b; --panel:#161619; --panel2:#1d1d21; --line:#2c2c31;
+    --txt:#f4f4f5; --muted:#a1a1aa; --dim:#71717a; --amber:#fbbf24;
+    --sat:env(safe-area-inset-top,0px);
+    --sab:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--bg);color:var(--txt);overflow:hidden;
+    overscroll-behavior:none;
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    -webkit-user-select:none;user-select:none;
+  }
+  #feed{
+    position:fixed;inset:0;overflow-y:scroll;overflow-x:hidden;
+    scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain;scrollbar-width:none;
+  }
+  #feed::-webkit-scrollbar{display:none;}
+  .card{
+    position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:calc(var(--sat) + 68px) 22px calc(var(--sab) + 96px);
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(160deg,hsla(var(--hue),72%,52%,.17),transparent 58%);
+  }
+  .card.cluster::after{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:linear-gradient(180deg,var(--amber),transparent);opacity:.8;
+  }
+  .card-inner{position:relative;z-index:1;}
+  .card-top{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+  .tag{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid #3a3a40;color:#c8c8d0;background:rgba(255,255,255,.04);}
+  .tag.main{color:var(--amber);border-color:#5a4512;background:rgba(251,191,36,.1);font-weight:600;}
+  .tag.cl{color:var(--amber);border-color:#5a3b12;background:rgba(251,191,36,.07);}
+  .vtitle{font-size:25px;line-height:1.34;font-weight:700;letter-spacing:-.2px;margin:0 0 16px;}
+  .vmeta{font-size:13.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:20px;}
+  .vmeta b{color:var(--txt);font-weight:600;}
+  .stats{border-top:1px solid var(--line);padding-top:15px;display:grid;grid-template-columns:1fr 1fr;gap:13px 10px;}
+  .st .k{font-size:11px;color:var(--dim);}
+  .st .v{font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;margin-top:1px;}
+  .prob{margin-top:20px;font-size:12px;color:var(--dim);display:flex;align-items:baseline;gap:7px;}
+  .prob b{color:var(--amber);font-size:15px;font-variant-numeric:tabular-nums;font-weight:650;}
+  .topbar{
+    position:fixed;top:0;left:0;right:0;z-index:30;pointer-events:none;
+    padding:calc(var(--sat) + 12px) 18px 14px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    background:linear-gradient(180deg,rgba(10,10,11,.92),rgba(10,10,11,0));
+  }
+  .topbar .ttl{font-size:14px;font-weight:650;}
+  .topbar .ttl small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:1px;}
+  .topbar button{pointer-events:auto;}
+  button{font-family:inherit;font-size:13.5px;cursor:pointer;border-radius:10px;border:1px solid var(--line);
+    background:rgba(29,29,33,.92);color:var(--txt);padding:9px 14px;transition:.15s;backdrop-filter:blur(10px);}
+  button:active{transform:scale(.96);}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#1c1917;font-weight:650;}
+  button.mini{padding:6px 11px;font-size:12.5px;border-radius:9px;}
+  .bottombar{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    padding:12px 18px calc(var(--sab) + 14px);
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    background:linear-gradient(0deg,rgba(10,10,11,.94),rgba(10,10,11,0));
+  }
+  .counter{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:center;flex:1;}
+  .counter b{color:var(--txt);font-size:15px;font-weight:650;}
+  .counter small{display:block;color:var(--dim);font-size:10.5px;margin-top:1px;}
+  #backdrop{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);
+    opacity:0;pointer-events:none;transition:.22s;}
+  #backdrop.open{opacity:1;pointer-events:auto;}
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:50;max-height:86%;
+    background:var(--panel);border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;transform:translateY(102%);
+    transition:transform .28s cubic-bezier(.32,.72,0,1);
+    display:flex;flex-direction:column;
+  }
+  #sheet.open{transform:translateY(0);}
+  .handle{padding:10px 0 4px;display:flex;justify-content:center;flex:none;}
+  .handle i{display:block;width:38px;height:4px;border-radius:3px;background:#3f3f46;}
+  .sheet-head{display:flex;justify-content:space-between;align-items:center;
+    padding:4px 18px 12px;flex:none;border-bottom:1px solid var(--line);}
+  .sheet-head h2{margin:0;font-size:14.5px;font-weight:650;}
+  .sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 18px calc(var(--sab) + 24px);}
+  .sec{margin:16px 0 0;}
+  .sec:first-child{margin-top:14px;}
+  .sec h3{margin:0 0 9px;font-size:11.5px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;font-weight:650;}
+  label.row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    font-size:13px;color:var(--muted);margin:13px 0 6px;}
+  label.row b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%;-webkit-appearance:none;height:5px;border-radius:5px;background:#2c2c31;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+    background:var(--amber);border:2px solid var(--bg);box-shadow:0 0 0 1px #52525b;}
+  input[type=text],select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:10px;padding:10px 11px;font-family:inherit;font-size:15px;}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .seg button{padding:11px 10px;font-size:13px;line-height:1.35;text-align:left;}
+  .seg button.on{border-color:var(--amber);background:rgba(251,191,36,.12);color:var(--amber);font-weight:650;}
+  .seg button small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:3px;}
+  .seg button.on small{color:#b99a45;}
+  .seedrow{display:grid;grid-template-columns:1fr auto;gap:8px;}
+  .note{font-size:12px;color:var(--dim);line-height:1.65;margin-top:9px;
+    border-left:2px solid var(--line);padding-left:10px;}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 12px;}
+  .stat .n{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;}
+  .stat .l{font-size:11px;color:var(--muted);margin-top:2px;}
+  .bars{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+  .bar-row{display:grid;grid-template-columns:70px 1fr 28px;gap:9px;align-items:center;font-size:12px;}
+  .bar-row .nm{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bar-row .ct{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);}
+  .bar-track{position:relative;height:16px;background:#1e1e22;border-radius:5px;overflow:hidden;}
+  .bar-fill{position:absolute;left:0;top:2px;bottom:2px;border-radius:4px;
+    background:linear-gradient(90deg,#a16207,var(--amber));}
+  .bar-exp{position:absolute;top:-3px;bottom:-3px;width:2px;background:#8b8b93;}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--dim);margin-top:9px;flex-wrap:wrap;}
+  .legend .dash{display:inline-block;width:2px;height:11px;background:#8b8b93;margin-right:5px;vertical-align:-1px;}
+  .empty{padding:40px 20px;text-align:center;color:var(--dim);font-size:14px;}
+  #toast{position:fixed;left:50%;bottom:calc(var(--sab) + 92px);transform:translate(-50%,14px);
+    opacity:0;background:#242428;border:1px solid var(--line);border-radius:11px;padding:10px 17px;
+    font-size:13.5px;pointer-events:none;transition:.24s;z-index:60;max-width:82%;text-align:center;}
+  #toast.show{opacity:1;transform:translate(-50%,0);}
+  @media (orientation:landscape) and (max-height:500px){
+    .vtitle{font-size:19px;} .stats{grid-template-columns:1fr 1fr 1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div id="feed"></div>
+
+<div class="topbar">
+  <div class="ttl">随机流<small id="roundInfo">第 1 轮</small></div>
+  <button class="mini" id="btn-reshuffle">重新洗牌</button>
+</div>
+
+<div class="bottombar">
+  <button class="mini" id="btn-sheet">参数</button>
+  <div class="counter"><b id="pos">1</b> / <span id="total">0</span><small id="pct">已看 0%</small></div>
+  <button class="mini" id="btn-resample">重抽这条</button>
+</div>
+
+<div id="backdrop"></div>
+<div id="sheet">
+  <div class="handle"><i></i></div>
+  <div class="sheet-head">
+    <h2>随机参数</h2>
+    <button class="mini" id="btn-close">完成</button>
+  </div>
+  <div class="sheet-body">
+    <div class="sec">
+      <h3>抽样方式</h3>
+      <div class="seg" id="method">
+        <button data-method="uniform">完全均匀随机<small>每个视频等概率</small></button>
+        <button data-method="stratified">分层均匀随机<small>每个领域等概率</small></button>
+      </div>
+      <div class="note" id="methodNote"></div>
+    </div>
+    <div class="sec">
+      <h3>随机源</h3>
+      <div class="seedrow">
+        <input type="text" id="seed" placeholder="种子" />
+        <button class="mini" id="btn-seed">换种子</button>
+      </div>
+      <div class="note">同一个种子永远是同一个顺序。随机也可以被复现和审计。</div>
+    </div>
+    <div class="sec">
+      <h3>约束</h3>
+      <label class="row"><span>防聚簇强度</span><b id="pvSpread">0%</b></label>
+      <input type="range" id="spread" min="0" max="1" step="0.05">
+      <div class="note">0 是真随机，允许连续抽到同领域；调高会强制打散，代价是它不再"真"。</div>
+      <label class="row"><span>质量底线</span></label>
+      <select id="gate">
+        <option value="off">不过滤 —— 垃圾也照抽</option>
+        <option value="bait" selected>只去掉标题党</option>
+        <option value="strict">去标题党 + 低互动</option>
+      </select>
+      <div class="note">过滤本身就是一种偏见。想要最纯粹的随机，就选「不过滤」。</div>
+    </div>
+    <div class="sec">
+      <h3>本轮审计</h3>
+      <div class="stat-grid">
+        <div class="stat"><div class="n" id="stCover">0/0</div><div class="l">前 15 条覆盖领域</div></div>
+        <div class="stat"><div class="n" id="stAdj">0</div><div class="l">相邻同领域次数</div></div>
+        <div class="stat"><div class="n" id="stEnt">0.00</div><div class="l">分布均匀度</div></div>
+        <div class="stat"><div class="n" id="stPool">0</div><div class="l">候选池大小</div></div>
+      </div>
+      <div class="note" style="margin-top:12px">下面统计的是<b>你最先刷到的 15 条</b>。全轮分布是固定的，只有开头这段能看出两种随机的差别；15 条样本量偏小，单轮会有明显波动，换几个种子多看几轮才准。</div>
+      <div class="bars" id="bars" style="margin-top:12px"></div>
+      <div class="legend"><span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--amber);margin-right:5px;vertical-align:-1px"></i>实际条数</span><span><span class="dash"></span>理论上该出现几条</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+(function(){
+"use strict";
+var TOPICS=["知识科普","科技数码","美食","旅行","搞笑","影视","音乐","游戏","健身","时尚穿搭","美妆","情感","职场","萌宠","汽车","生活记录","母婴","财经","体育","二次元"];
+var BAIT=["震惊","必看","不看后悔","最后一天","家人们","速看","天塌了","千万别","无脑"];
+
+function seedVideos(){
+  var V=[
+   ["v01","3分钟讲透：为什么央行降息会影响你的房贷",["财经","知识科普"],480,"财经小课堂",6,1200000,86000,4200],
+   ["v02","iPhone 17 上手一周，这三点最惊喜",["科技数码"],600,"数码阿哲",20,2100000,120000,8000],
+   ["v03","在家复刻夜市烤冷面，酱汁配方全公开",["美食"],180,"厨房小鹿",30,900000,70000,3000],
+   ["v04","新疆自驾12天，最值得去的一段路",["旅行"],900,"旅行日记",50,1500000,95000,5000],
+   ["v05","打工人必看的3个摸鱼效率技巧",["职场","知识科普"],240,"效率研究所",12,600000,45000,2000],
+   ["v06","这大概是今年最好笑的古装剧片段",["影视","搞笑"],90,"影视剪辑君",8,3200000,210000,12000],
+   ["v07","每天10分钟，练出清晰腹肌线条",["健身"],600,"健身教练Leo",34,800000,60000,2500],
+   ["v08","为什么你总是存不下钱？一个残酷的真相",["财经","情感"],300,"财经小课堂",40,1100000,78000,6000],
+   ["v09","我用AI把老照片修复成4K，效果绝了",["科技数码","知识科普"],150,"科技玩家",15,1800000,130000,5000],
+   ["v10","震惊！这三种食物千万别一起吃",["生活记录"],60,"养生大课堂",5,4500000,90000,15000],
+   ["v11","云南小城慢生活，一天只花50块",["旅行","生活记录"],420,"旅行日记",70,700000,52000,3000],
+   ["v12","显卡怎么选？2026年最全避坑指南",["科技数码"],720,"硬件老张",26,950000,66000,4000],
+   ["v13","凌晨三点的便利店，我遇到了一个人",["情感","生活记录"],120,"城市夜归人",18,1300000,88000,7000],
+   ["v14","新手化妆最容易犯的5个错",["美妆"],300,"美妆小林",44,500000,40000,2000],
+   ["v15","露营做饭有多香？一锅炖全搞定",["美食","旅行"],240,"厨房小鹿",9,1600000,110000,4000],
+   ["v16","别再无脑背单词了，这个方法效率翻倍",["知识科普"],360,"效率研究所",28,1200000,92000,5000],
+   ["v17","90秒看完一整部科幻神作",["影视"],90,"影视剪辑君",3,2400000,150000,9000],
+   ["v18","健身房里最容易被忽略的3个动作",["健身"],480,"健身教练Leo",55,620000,48000,2000],
+   ["v19","家人们必看！最后一天，速看！",["生活记录"],45,"带货日记",2,5200000,60000,20000],
+   ["v20","猫主子半夜拆家，我该怎么办",["萌宠"],60,"猫奴日记",11,1900000,160000,12000],
+   ["v21","这首歌的前奏一响，我直接单曲循环",["音乐"],60,"音乐盒子",7,2200000,180000,9000],
+   ["v22","新版本这个隐藏机制，90%的人不知道",["游戏"],300,"游戏老K",14,1400000,98000,6200],
+   ["v23","这部番的作画精度，已经不是人类了",["二次元"],90,"番剧研究所",22,1700000,145000,8000],
+   ["v24","20万预算，这台车我劝你别买",["汽车"],480,"车评老周",16,1100000,72000,9500],
+   ["v25","慢放十遍才看懂的那个进球",["体育"],60,"体育现场",4,2600000,190000,11000],
+   ["v26","两岁还不会说话，要不要干预",["母婴"],360,"育儿圆桌",36,480000,39000,5200],
+   ["v27","同一件大衣，三种身材怎么穿",["时尚穿搭"],180,"穿搭小A",26,760000,58000,2600],
+   ["v28","翻唱老歌，没想到评论区吵翻了",["音乐"],120,"音乐盒子",45,950000,81000,12000],
+   ["v29","这游戏我玩了500小时，才明白这件事",["游戏"],420,"游戏老K",60,620000,51000,4800],
+   ["v30","把家里的老路由器改成NAS，真香",["科技数码"],540,"硬件老张",33,880000,63000,3900]];
+  return V.map(function(r){ return {id:r[0],title:r[1],topics:r[2],duration:r[3],author:r[4],
+    ageH:r[5],play:r[6],like:r[7],comment:r[8]}; });
+}
+var VIDEOS=seedVideos();
+
+function hashStr(s){
+  var h=2166136261;
+  for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+  return h>>>0;
+}
+function mulberry32(a){
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    var t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+function fmtPlay(n){
+  if(n>=100000000) return (n/100000000).toFixed(1)+"亿";
+  if(n>=10000) return (n/10000).toFixed(1)+"万";
+  return String(n);
+}
+function fmtDur(s){ var m=Math.floor(s/60),r=s%60; return m>0?(m+"分"+(r?r+"秒":"")):s+"秒"; }
+function hasBait(t){ for(var i=0;i<BAIT.length;i++){ if(t.indexOf(BAIT[i])>=0) return true; } return false; }
+function likeRate(v){ return v.like/Math.max(v.play,1); }
+function clamp(x,a,b){ return x<a?a:(x>b?b:x); }
+function sharesTopic(a,b){
+  for(var i=0;i<a.topics.length;i++){
+    for(var j=0;j<b.topics.length;j++){ if(a.topics[i]===b.topics[j]) return true; }
+  }
+  return false;
+}
+function topicHue(t){
+  var h=0; for(var i=0;i<t.length;i++){ h=(h*31+t.charCodeAt(i))%360; }
+  return h;
+}
+
+function poolFor(gate){
+  return VIDEOS.filter(function(v){
+    if(gate==="bait"||gate==="strict"){ if(hasBait(v.title)) return false; }
+    if(gate==="strict"){ if(likeRate(v)<0.03||v.play<100000) return false; }
+    return true;
+  });
+}
+function weightsFor(pool,method){
+  var totals={};
+  pool.forEach(function(v){ v.topics.forEach(function(t){ totals[t]=(totals[t]||0)+1; }); });
+  var w={}, sum=0;
+  pool.forEach(function(v){
+    var x;
+    if(method==="uniform"){ x=1; }
+    else{
+      x=0;
+      v.topics.forEach(function(t){ x += 1/Math.max(totals[t]||1,1); });
+      x = x/Math.max(v.topics.length,1);
+    }
+    w[v.id]=x; sum+=x;
+  });
+  return {w:w,sum:sum};
+}
+
+/* 加权不放回抽样：Efraimidis–Spirakis
+   key = U^(1/w)，取最大的 key 依次出队。
+   均匀权重时退化为普通随机洗牌；分层时每个领域的概率质量相等。 */
+function sampleOrder(pool,method,rng){
+  var ww=weightsFor(pool,method);
+  var keyed=pool.map(function(v){
+    var u=Math.max(rng(),1e-12);
+    return {v:v, w:ww.w[v.id], k:Math.pow(u,1/Math.max(ww.w[v.id],1e-9))};
+  });
+  keyed.sort(function(a,b){ return b.k-a.k; });
+  return {order:keyed.map(function(x){ return x.v; }), weights:ww.w, wsum:ww.sum};
+}
+
+function applySpread(order,spread,rng){
+  if(spread<=0) return order.slice();
+  var a=order.slice();
+  for(var i=1;i<a.length;i++){
+    if(sharesTopic(a[i-1],a[i])){
+      for(var j=i+1;j<Math.min(a.length,i+14);j++){
+        if(!sharesTopic(a[i-1],a[j])){
+          if(rng()<spread){ var tmp=a[i]; a[i]=a[j]; a[j]=tmp; }
+          break;
+        }
+      }
+    }
+  }
+  return a;
+}
+
+function applyAuthorLimit(order,win,max){
+  var a=order.slice(), out=[];
+  while(a.length){
+    var pick=-1;
+    for(var i=0;i<a.length;i++){
+      var same=0;
+      for(var j=Math.max(0,out.length-win+1);j<out.length;j++){
+        if(out[j].author===a[i].author) same++;
+      }
+      if(same<max){ pick=i; break; }
+    }
+    if(pick<0) pick=0;
+    out.push(a.splice(pick,1)[0]);
+  }
+  return out;
+}
+
+var WINDOW=15;
+function computeStats(order,pool){
+  var win=order.slice(0,Math.min(WINDOW,order.length));
+  var n=win.length;
+  if(!n) return null;
+  var tc={}, adj=0;
+  win.forEach(function(v,i){
+    var m=v.topics[0];
+    tc[m]=(tc[m]||0)+1;
+    if(i>0 && sharesTopic(win[i-1],v)) adj++;
+  });
+  var poolTopics={}, poolCount={};
+  pool.forEach(function(v){
+    var m=v.topics[0];
+    poolTopics[m]=1; poolCount[m]=(poolCount[m]||0)+1;
+  });
+  var K=Object.keys(poolTopics).length||1;
+  var covered=Object.keys(tc).length;
+  var ent=0;
+  Object.keys(tc).forEach(function(t){ var q=tc[t]/n; ent -= q*Math.log(q); });
+  var maxEnt=Math.log(K);
+  var exp={};
+  Object.keys(poolTopics).forEach(function(t){
+    exp[t] = (S.method==="stratified")
+      ? n/K
+      : n*(poolCount[t]||0)/Math.max(pool.length,1);
+  });
+  return {n:n,k:K,covered:covered,tc:tc,adj:adj,
+          ent:maxEnt>0?ent/maxEnt:0,expected:exp};
+}
+var S={seed:"",method:"stratified",spread:0,gate:"bait",
+       order:[],weights:{},wsum:1,round:1,stats:null};
+var cur=0, timer=null;
+
+function el(id){ return document.getElementById(id); }
+function esc(s){
+  return String(s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+var tTimer=null;
+function toast(msg){
+  var t=el("toast"); t.textContent=msg; t.classList.add("show");
+  if(tTimer) clearTimeout(tTimer);
+  tTimer=setTimeout(function(){ t.classList.remove("show"); },1800);
+}
+
+function shuffle(){
+  var pool=poolFor(S.gate);
+  if(!pool.length){ el("feed").innerHTML='<div class="empty">候选池为空，换个质量底线试试</div>'; return; }
+  var rng=mulberry32(hashStr(S.seed));
+  var res=sampleOrder(pool,S.method,rng);
+  var order=applySpread(res.order,S.spread,rng);
+  if(S.spread>0) order=applyAuthorLimit(order,10,2);
+  S.order=order; S.weights=res.weights; S.wsum=res.wsum;
+  S.stats=computeStats(order,pool);
+  render();
+  el("feed").scrollTop=0;
+  cur=0;
+  updatePos();
+}
+
+function cardHTML(v,i){
+  var hue=topicHue(v.topics[0]);
+  var prev=i>0?S.order[i-1]:null;
+  var cl=prev&&sharesTopic(prev,v);
+  var p=(S.weights[v.id]||0)/S.wsum*100;
+  var tags=v.topics.map(function(t,k){
+    return '<span class="tag'+(k===0?" main":"")+'">'+esc(t)+'</span>';
+  }).join("");
+  return '<section class="card'+(cl?" cluster":"")+'" style="--hue:'+hue+'">'
+   +'<div class="card-inner">'
+   +'<div class="card-top"><span class="tag">#'+(i+1)+'</span>'+tags
+   +(cl?'<span class="tag cl">与上条同领域</span>':'')+'</div>'
+   +'<h2 class="vtitle">'+esc(v.title)+'</h2>'
+   +'<div class="vmeta"><span>@'+esc(v.author)+'</span><span>'+fmtDur(v.duration)
+   +'</span><span>'+v.ageH+' 小时前</span></div>'
+   +'<div class="stats">'
+   +'<div class="st"><div class="k">播放</div><div class="v">'+fmtPlay(v.play)+'</div></div>'
+   +'<div class="st"><div class="k">点赞率</div><div class="v">'+(likeRate(v)*100).toFixed(1)+'%</div></div>'
+   +'<div class="st"><div class="k">评论</div><div class="v">'+fmtPlay(v.comment)+'</div></div>'
+   +'</div>'
+   +'<div class="prob">本条被抽中的概率 <b>'+p.toFixed(1)+'%</b>'
+   +(S.method==="uniform"?'<span>· 全体等概率</span>':'<span>· 按领域均分</span>')+'</div>'
+   +'</div></section>';
+}
+
+function render(){
+  el("feed").innerHTML=S.order.map(cardHTML).join("");
+  el("total").textContent=S.order.length;
+  el("roundInfo").textContent="第 "+S.round+" 轮 · "+(S.method==="uniform"?"完全均匀":"分层均匀");
+  renderStats();
+}
+
+function renderStats(){
+  var st=S.stats; if(!st) return;
+  el("stCover").textContent=st.covered+"/"+st.k;
+  el("stAdj").textContent=st.adj;
+  el("stEnt").textContent=st.ent.toFixed(2);
+  el("stPool").textContent=st.n;
+  var keys=Object.keys(st.tc).sort(function(a,b){ return st.tc[b]-st.tc[a]; });
+  var max=Math.max.apply(null,keys.map(function(k){ return st.tc[k]; }))||1;
+  el("bars").innerHTML=keys.map(function(k){
+    var c=st.tc[k], w=c/max*100, e=Math.min(100,(st.expected[k]||0)/max*100);
+    return '<div class="bar-row"><span class="nm">'+esc(k)+'</span>'
+      +'<span class="bar-track"><span class="bar-fill" style="width:'+w.toFixed(1)+'%"></span>'
+      +'<span class="bar-exp" style="left:'+e.toFixed(1)+'%"></span></span>'
+      +'<span class="ct">'+c+'</span></div>';
+  }).join("");
+}
+
+function updatePos(){
+  var feed=el("feed"), h=feed.clientHeight||1;
+  var i=clamp(Math.round(feed.scrollTop/h),0,Math.max(S.order.length-1,0));
+  cur=i;
+  el("pos").textContent=S.order.length?i+1:0;
+  var pctv=S.order.length?Math.round((i+1)/S.order.length*100):0;
+  el("pct").textContent="已看 "+pctv+"%";
+}
+
+function resample(){
+  if(!S.order.length) return;
+  var used={};
+  S.order.forEach(function(v){ used[v.id]=1; });
+  var pool=poolFor(S.gate).filter(function(v){ return !used[v.id]; });
+  if(!pool.length){ toast("候选池里的视频都已在当前轮内"); return; }
+  var pick=pool[Math.floor(Math.random()*pool.length)];
+  S.order[cur]=pick;
+  var feed=el("feed"), old=feed.children[cur];
+  if(old){ old.outerHTML=cardHTML(pick,cur); }
+  renderStats();
+  toast("已重抽这一条（不影响其他条目，也不学习）");
+}
+
+function openSheet(o){
+  el("sheet").classList.toggle("open",o);
+  el("backdrop").classList.toggle("open",o);
+}
+
+function syncSheet(){
+  var segs=el("method").querySelectorAll("button");
+  for(var i=0;i<segs.length;i++){
+    segs[i].classList.toggle("on",segs[i].getAttribute("data-method")===S.method);
+  }
+  el("methodNote").innerHTML = S.method==="uniform"
+    ? '<b>完全均匀随机</b>：每个视频被抽中的概率相同。结果是——哪个领域视频产量大，它出现得就多。它反映的是产量，不是公平。'
+    : '<b>分层均匀随机</b>：让每个领域的总概率相等，抵消产量优势。小领域不再被大领域淹没，但这也是一种人为偏见。';
+  el("methodNote").innerHTML += '<br><br>同一个种子下切换两种方式，随机数序列完全相同 —— 差别只来自权重，是一组可控对照。';
+  el("seed").value=S.seed;
+  el("spread").value=S.spread;
+  el("pvSpread").textContent=Math.round(S.spread*100)+"%";
+  el("gate").value=S.gate;
+}
+
+function reroll(){
+  S.round=1;
+  shuffle();
+}
+var ticking=false;
+el("feed").addEventListener("scroll",function(){
+  if(ticking) return;
+  ticking=true;
+  requestAnimationFrame(function(){ ticking=false; updatePos(); });
+},{passive:true});
+
+el("btn-reshuffle").addEventListener("click",function(){
+  S.round++; shuffle(); openSheet(false);
+  toast("第 "+S.round+" 轮 · 全新随机顺序");
+});
+el("btn-sheet").addEventListener("click",function(){ openSheet(true); });
+el("btn-close").addEventListener("click",function(){ openSheet(false); });
+el("backdrop").addEventListener("click",function(){ openSheet(false); });
+el("btn-resample").addEventListener("click",resample);
+
+el("method").addEventListener("click",function(e){
+  var b=e.target.closest("[data-method]");
+  if(!b) return;
+  var m=b.getAttribute("data-method");
+  if(m===S.method) return;
+  S.method=m; syncSheet(); reroll();
+  toast(m==="uniform"?"已切换：完全均匀随机":"已切换：分层均匀随机");
+});
+
+el("btn-seed").addEventListener("click",function(){
+  S.seed=Math.random().toString(36).slice(2,9); syncSheet(); reroll();
+  toast("新种子："+S.seed);
+});
+el("seed").addEventListener("change",function(){
+  var v=el("seed").value.trim();
+  S.seed=v||Math.random().toString(36).slice(2,9);
+  syncSheet(); reroll();
+});
+
+el("spread").addEventListener("input",function(){
+  S.spread=parseFloat(el("spread").value);
+  el("pvSpread").textContent=Math.round(S.spread*100)+"%";
+  if(timer) clearTimeout(timer);
+  timer=setTimeout(function(){ reroll(); },160);
+});
+
+el("gate").addEventListener("change",function(){
+  S.gate=el("gate").value; reroll();
+  toast(S.gate==="off"?"已关闭过滤：垃圾也照抽":"已应用质量底线");
+});
+
+document.addEventListener("keydown",function(e){
+  var feed=el("feed"), h=feed.clientHeight||1;
+  if(e.key==="ArrowDown"){ e.preventDefault(); feed.scrollTo({top:(cur+1)*h,behavior:"smooth"}); }
+  if(e.key==="ArrowUp"){ e.preventDefault(); feed.scrollTo({top:(cur-1)*h,behavior:"smooth"}); }
+});
+
+window.addEventListener("orientationchange",function(){
+  setTimeout(function(){
+    var feed=el("feed");
+    feed.scrollTop=cur*(feed.clientHeight||1);
+  },260);
+});
+
+S.seed=Math.random().toString(36).slice(2,9);
+syncSheet();
+shuffle();
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load",function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
+})();
+</script>
+</body>
+</html>
