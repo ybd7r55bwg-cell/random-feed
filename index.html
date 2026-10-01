@@ -142,6 +142,38 @@
   @media (orientation:landscape) and (max-height:500px){
     .vtitle{font-size:19px;} .stats{grid-template-columns:1fr 1fr 1fr;}
   }
+  /* ===== 全屏视频化卡片（覆盖上面的文字卡片样式） ===== */
+  .card{display:block;padding:0;justify-content:flex-start;cursor:pointer;}
+  .card::before{display:none;}
+  .card.cluster::after{display:none;}
+  .bg{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0;}
+  .scrim{position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(180deg,rgba(0,0,0,.58) 0%,rgba(0,0,0,.10) 20%,
+      rgba(0,0,0,0) 40%,rgba(0,0,0,.45) 68%,rgba(0,0,0,.90) 100%);}
+  .content{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;
+    justify-content:space-between;padding:calc(var(--sat) + 62px) 18px calc(var(--sab) + 92px);}
+  .kicker{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .pill{font-size:11px;padding:4px 10px;border-radius:20px;color:#eceef2;
+    background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(8px);}
+  .pill.main{color:#fbbf24;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.14);font-weight:600;}
+  .pill.cl{color:#fcd34d;border-color:rgba(251,191,36,.3);}
+  .bottom{display:flex;align-items:flex-end;gap:14px;}
+  .left{flex:1;min-width:0;}
+  .author{font-size:15px;font-weight:650;margin-bottom:7px;text-shadow:0 1px 12px rgba(0,0,0,.75);}
+  .vtitle{font-size:21px;line-height:1.42;font-weight:700;margin:0 0 9px;
+    text-shadow:0 2px 16px rgba(0,0,0,.8);display:-webkit-box;
+    -webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
+  .meta{font-size:12px;color:rgba(255,255,255,.7);text-shadow:0 1px 10px rgba(0,0,0,.75);}
+  .right{display:flex;flex-direction:column;gap:16px;flex:none;align-items:center;}
+  .act{text-align:center;min-width:54px;}
+  .act b{display:block;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 10px rgba(0,0,0,.85);}
+  .act span{display:block;font-size:10.5px;color:rgba(255,255,255,.6);margin-top:1px;}
+  .pausehint{position:absolute;left:50%;top:50%;z-index:3;width:66px;height:66px;border-radius:50%;
+    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.22);display:grid;place-items:center;
+    font-size:22px;color:#fff;opacity:0;transform:translate(-50%,-50%) scale(.85);
+    transition:.2s;pointer-events:none;backdrop-filter:blur(8px);}
+  .card.paused .pausehint{opacity:1;transform:translate(-50%,-50%) scale(1);}
 </style>
 </head>
 <body>
@@ -420,33 +452,112 @@ function shuffle(){
   updatePos();
 }
 
+/* ===== 程序生成的动态画面：每条视频由 ID 决定独一无二的流动视觉 ===== */
+var VIS={}, rafId=null, actIdx=-1, paused=false;
+var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+function visualFor(v){
+  if(VIS[v.id]) return VIS[v.id];
+  var r=mulberry32(hashStr(v.id+"|"+v.title));
+  var base=topicHue(v.topics[0]);
+  var blobs=[];
+  for(var i=0;i<6;i++){
+    blobs.push({h:(base+(r()*130-65)+360)%360,
+      x:0.12+r()*0.76, y:0.12+r()*0.76,
+      rad:0.16+r()*0.46, amp:0.05+r()*0.15,
+      sp:0.18+r()*0.50, inten:0.30+r()*0.34,
+      ph:r()*6.2832, ph2:r()*6.2832});
+  }
+  var cfg={base:base,blobs:blobs};
+  VIS[v.id]=cfg;
+  return cfg;
+}
+function paint(cv,cfg,t){
+  if(!cv||!cfg) return;
+  var ctx=cv.getContext("2d"), W=cv.width, H=cv.height;
+  if(!W||!H) return;
+  ctx.globalCompositeOperation="source-over";
+  var bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,"hsl("+cfg.base+",46%,5%)");
+  bg.addColorStop(1,"hsl("+((cfg.base+42)%360)+",52%,9%)");
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation="lighter";
+  for(var i=0;i<cfg.blobs.length;i++){
+    var b=cfg.blobs[i], tt=t*0.001+b.ph;
+    var x=(b.x+Math.sin(tt*b.sp+b.ph)*b.amp)*W;
+    var y=(b.y+Math.cos(tt*b.sp*0.83+b.ph2)*b.amp)*H;
+    var rad=b.rad*Math.max(W,H);
+    var g=ctx.createRadialGradient(x,y,0,x,y,rad);
+    g.addColorStop(0,"hsla("+b.h+",88%,60%,"+b.inten+")");
+    g.addColorStop(0.42,"hsla("+b.h+",84%,48%,"+(b.inten*0.34)+")");
+    g.addColorStop(1,"hsla("+b.h+",80%,44%,0)");
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(x,y,rad,0,6.2832); ctx.fill();
+  }
+  ctx.globalCompositeOperation="source-over";
+  var vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.22,W/2,H/2,Math.max(W,H)*0.78);
+  vg.addColorStop(0,"rgba(0,0,0,0)");
+  vg.addColorStop(1,"rgba(0,0,0,0.58)");
+  ctx.fillStyle=vg;
+  ctx.fillRect(0,0,W,H);
+}
+function sizeCanvas(cv){
+  var r=cv.getBoundingClientRect();
+  var w=Math.max(2,Math.round(r.width/3)), h=Math.max(2,Math.round(r.height/3));
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+}
+function setActive(i){
+  if(i===actIdx) return;
+  actIdx=i;
+  var feed=el("feed"), card=feed.children[i];
+  if(!card) return;
+  var cv=card.querySelector("canvas");
+  if(!cv) return;
+  if(!cv._cfg) cv._cfg=visualFor(S.order[i]);
+  sizeCanvas(cv);
+  paint(cv,cv._cfg,0);
+  paused=reduceMotion;
+  card.classList.toggle("paused",paused);
+}
+function tick(ts){
+  rafId=requestAnimationFrame(tick);
+  if(paused||actIdx<0) return;
+  var card=el("feed").children[actIdx];
+  if(!card) return;
+  var cv=card.querySelector("canvas");
+  if(cv) paint(cv,cv._cfg,ts);
+}
 function cardHTML(v,i){
-  var hue=topicHue(v.topics[0]);
   var prev=i>0?S.order[i-1]:null;
   var cl=prev&&sharesTopic(prev,v);
   var p=(S.weights[v.id]||0)/S.wsum*100;
   var tags=v.topics.map(function(t,k){
-    return '<span class="tag'+(k===0?" main":"")+'">'+esc(t)+'</span>';
+    return '<span class="pill'+(k===0?" main":"")+'">'+esc(t)+'</span>';
   }).join("");
-  return '<section class="card'+(cl?" cluster":"")+'" style="--hue:'+hue+'">'
-   +'<div class="card-inner">'
-   +'<div class="card-top"><span class="tag">#'+(i+1)+'</span>'+tags
-   +(cl?'<span class="tag cl">与上条同领域</span>':'')+'</div>'
+  return '<section class="card'+(cl?" cluster":"")+'">'
+   +'<canvas class="bg"></canvas>'
+   +'<div class="scrim"></div>'
+   +'<div class="content">'
+   +'<div class="kicker"><span class="pill">#'+(i+1)+'</span>'+tags
+   +(cl?'<span class="pill cl">与上条同领域</span>':'')+'</div>'
+   +'<div class="bottom">'
+   +'<div class="left">'
+   +'<div class="author">@'+esc(v.author)+'</div>'
    +'<h2 class="vtitle">'+esc(v.title)+'</h2>'
-   +'<div class="vmeta"><span>@'+esc(v.author)+'</span><span>'+fmtDur(v.duration)
-   +'</span><span>'+v.ageH+' 小时前</span></div>'
-   +'<div class="stats">'
-   +'<div class="st"><div class="k">播放</div><div class="v">'+fmtPlay(v.play)+'</div></div>'
-   +'<div class="st"><div class="k">点赞率</div><div class="v">'+(likeRate(v)*100).toFixed(1)+'%</div></div>'
-   +'<div class="st"><div class="k">评论</div><div class="v">'+fmtPlay(v.comment)+'</div></div>'
+   +'<div class="meta">'+fmtDur(v.duration)+' · '+v.ageH+' 小时前 · 抽样概率 '+p.toFixed(1)+'%</div>'
    +'</div>'
-   +'<div class="prob">本条被抽中的概率 <b>'+p.toFixed(1)+'%</b>'
-   +(S.method==="uniform"?'<span>· 全体等概率</span>':'<span>· 按领域均分</span>')+'</div>'
-   +'</div></section>';
+   +'<div class="right">'
+   +'<div class="act"><b>'+fmtPlay(v.play)+'</b><span>播放</span></div>'
+   +'<div class="act"><b>'+(likeRate(v)*100).toFixed(1)+'%</b><span>点赞率</span></div>'
+   +'<div class="act"><b>'+fmtPlay(v.comment)+'</b><span>评论</span></div>'
+   +'</div>'
+   +'</div></div>'
+   +'<div class="pausehint">▶</div>'
+   +'</section>';
 }
-
 function render(){
   el("feed").innerHTML=S.order.map(cardHTML).join("");
+  actIdx=-1;
   el("total").textContent=S.order.length;
   el("roundInfo").textContent="第 "+S.round+" 轮 · "+(S.method==="uniform"?"完全均匀":"分层均匀");
   renderStats();
@@ -476,6 +587,7 @@ function updatePos(){
   el("pos").textContent=S.order.length?i+1:0;
   var pctv=S.order.length?Math.round((i+1)/S.order.length*100):0;
   el("pct").textContent="已看 "+pctv+"%";
+  setActive(i);
 }
 
 function resample(){
@@ -488,6 +600,7 @@ function resample(){
   S.order[cur]=pick;
   var feed=el("feed"), old=feed.children[cur];
   if(old){ old.outerHTML=cardHTML(pick,cur); }
+  actIdx=-1; setActive(cur);
   renderStats();
   toast("已重抽这一条（不影响其他条目，也不学习）");
 }
@@ -531,6 +644,13 @@ el("btn-sheet").addEventListener("click",function(){ openSheet(true); });
 el("btn-close").addEventListener("click",function(){ openSheet(false); });
 el("backdrop").addEventListener("click",function(){ openSheet(false); });
 el("btn-resample").addEventListener("click",resample);
+
+el("feed").addEventListener("click",function(e){
+  var card=e.target.closest?e.target.closest(".card"):null;
+  if(!card) return;
+  paused=!paused;
+  card.classList.toggle("paused",paused);
+});
 
 el("method").addEventListener("click",function(e){
   var b=e.target.closest("[data-method]");
@@ -579,6 +699,14 @@ window.addEventListener("orientationchange",function(){
 S.seed=Math.random().toString(36).slice(2,9);
 syncSheet();
 shuffle();
+rafId=requestAnimationFrame(tick);
+window.addEventListener("resize",function(){
+  if(actIdx<0) return;
+  var card=el("feed").children[actIdx];
+  if(!card) return;
+  var cv=card.querySelector("canvas");
+  if(cv){ sizeCanvas(cv); paint(cv,cv._cfg,0); }
+});
 
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
